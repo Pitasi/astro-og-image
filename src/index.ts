@@ -26,7 +26,9 @@ export default function astroOGImage({
         });
         h.listen(9099, "0.0.0.0");
 
-        const browser = await puppeteer.launch();
+        const browser = await puppeteer.launch({
+          args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        });
 
         const genPromises = inputPaths.map((route) => gen(dir, browser, route));
         await Promise.all(genPromises);
