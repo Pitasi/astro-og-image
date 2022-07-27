@@ -1,36 +1,47 @@
 import * as fs from "fs";
 import puppeteer from "puppeteer";
 import { fileURLToPath } from "node:url";
-import type { AstroIntegration, RouteData } from "astro";
+import type { AstroIntegration } from "astro";
 import httpServer from "http-server";
 
-export default function astroOGImage({
-  config,
-}: {
-  config: { path: string };
-}): AstroIntegration {
+// Port where http-server will be listening
+const tmpServerPort = 9099;
+
+// Path to the directory containing the pages to be screenshotted
+const srcPagesDir = "og_";
+
+// Path to the output directory where to put generated images (relative to the dist folder).
+const outputDir = "assets/og";
+
+export default function astroOGImage(): AstroIntegration {
   return {
     name: "astro-og-image",
     hooks: {
-      "astro:build:done": async ({ dir, routes }) => {
+      "astro:build:done": async ({ dir }) => {
         // Creates a directory for the images if it doesn't exist already
-        let outputDir = fileURLToPath(new URL(`./assets/og`, dir));
-        if (!fs.existsSync(outputDir)) {
-          fs.mkdirSync(outputDir);
+        let fullOutputDir = fileURLToPath(new URL(outputDir, dir));
+        if (!fs.existsSync(fullOutputDir)) {
+          fs.mkdirSync(fullOutputDir);
         }
 
-        let inputDir = fileURLToPath(new URL(`./og_`, dir));
-        const inputPaths = fs.readdirSync(inputDir);
         const h = httpServer.createServer({
           root: fileURLToPath(new URL(".", dir)),
         });
-        h.listen(9099, "0.0.0.0");
+        h.listen(tmpServerPort, "0.0.0.0");
 
         const browser = await puppeteer.launch({
           args: ["--no-sandbox", "--disable-setuid-sandbox"],
         });
 
-        const genPromises = inputPaths.map((route) => gen(dir, browser, route));
+        let inputDir = fileURLToPath(new URL(srcPagesDir, dir));
+        const inputPaths = fs.readdirSync(inputDir);
+        const genPromises = inputPaths.map((route) =>
+          makeScreenshot(
+            fileURLToPath(new URL(`${outputDir}/${route}.png`, dir)),
+            browser,
+            route
+          )
+        );
         await Promise.all(genPromises);
 
         await browser.close();
@@ -40,9 +51,13 @@ export default function astroOGImage({
   };
 }
 
-async function gen(dir: URL, browser: puppeteer.Browser, route: string) {
+async function makeScreenshot(
+  outputPath: string,
+  browser: puppeteer.Browser,
+  route: string
+) {
   const page = await browser.newPage();
-  await page.goto(`http://localhost:9099/og_/${route}`);
+  await page.goto(`http://localhost:${tmpServerPort}/${srcPagesDir}/${route}`);
   await page.waitForNetworkIdle();
   await page.setViewport({
     width: 1200,
@@ -50,7 +65,7 @@ async function gen(dir: URL, browser: puppeteer.Browser, route: string) {
   });
 
   await page.screenshot({
-    path: fileURLToPath(new URL(`./assets/og/${route}.png`, dir)),
+    path: outputPath,
     encoding: "binary",
   });
 }
